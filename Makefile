@@ -1,7 +1,8 @@
 TARGET = picamctl
 CFLAGS = -Wall
+PI ?= 0
 
-ifeq (PI, 1)
+ifeq ($(PI), 1)
 	CFLAGS += -DPI
 endif
 
