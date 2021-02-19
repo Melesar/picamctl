@@ -4,8 +4,6 @@
 #include <unistd.h>
 #include <signal.h>
 #include <string.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
 #include "communication.h"
 
 #ifdef PI
@@ -69,7 +67,6 @@ int main (int argc, char** argv)
 			return 1;
 		}
 
-		uint32_t addressValue = clientAddress.sin_addr.s_addr;
 		unsigned short receivedValue = *((unsigned short*)buffer);
 		printf("Received %d\n", receivedValue);
 
@@ -77,14 +74,14 @@ int main (int argc, char** argv)
 		switch (receivedValue)
 		{
 			case CMD_CONNECT:;
-				clientsNum = connectClient(addressValue);
+				clientsNum = connectClient(clientAddress);
 				if (clientsNum > 0 && cameraPid == 0)
 				{
 					cameraPid = launchCamera();
 				}
 				break;
 			case CMD_DISCONNECT:;
-				clientsNum = disconnectClient(addressValue);
+				clientsNum = disconnectClient(clientAddress);
 				if (clientsNum == 0 && cameraPid != 0)
 				{
 					disableCamera(cameraPid);

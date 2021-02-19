@@ -2,6 +2,8 @@
 #define COMMUNICATION_H
 
 #include <stdint.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
 
 typedef struct
 {
@@ -13,10 +15,10 @@ typedef struct
 int initCommunication(communicationParams params);
 
 //Returns the number of currently connected clients
-int connectClient(uint32_t address); 
+int connectClient(struct sockaddr_in address); 
 
 //Returns the number of currently connected clients
-int disconnectClient(uint32_t address);
+int disconnectClient(struct sockaddr_in address);
 
 void disconnectAll();
 

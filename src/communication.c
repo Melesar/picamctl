@@ -8,8 +8,9 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#define RES_SUCCESS 0
-#define RES_FULL	1
+#define RES_SUCCESS			  0
+#define RES_FULL			  1
+#define RES_CONNECTED_ALREADY 2
 
 static communicationParams parameters;
 
@@ -17,15 +18,8 @@ static int sok;
 static uint32_t* connectedClients;
 static int clientIndex;
 
-static void printClients()
-{
-	for(int i = 0; i < parameters.maxClients; i++)
-	{
-		printf("%d ", connectedClients[i]);
-	}
-	printf("\n");
-}
-
+static void printClients();
+static void respondToClient(char response, struct sockaddr_in address);
 
 int initCommunication(communicationParams params)
 {
@@ -41,33 +35,38 @@ int initCommunication(communicationParams params)
 	return sok != -1 ? 0 : -1;
 }
 
-int connectClient(uint32_t address)
+int connectClient(struct sockaddr_in address)
 {
 	if (clientIndex >= parameters.maxClients)
 	{
+		respondToClient(RES_FULL, address);
 		return parameters.maxClients;
 	}
 
+	uint32_t addressValue = address.sin_addr.s_addr;
 	for(int i = 0; i < parameters.maxClients; ++i)
 	{
-		if (connectedClients[i] == address)
+		if (connectedClients[i] == addressValue)
 		{
+			respondToClient(RES_CONNECTED_ALREADY, address);
 			return clientIndex;
 		}
 	}
 
-	connectedClients[clientIndex++] = address;
-	printf("Connected client %d\n", address);
+	connectedClients[clientIndex++] = addressValue;
+	respondToClient(RES_SUCCESS, address);
+	printf("Connected client %d\n", addressValue);
 	printClients();
 
 	return clientIndex;
 }
 
-int disconnectClient(uint32_t address)
+int disconnectClient(struct sockaddr_in address)
 {
+	uint32_t addressValue = address.sin_addr.s_addr;
 	for(int i = 0; i < parameters.maxClients; i++)
 	{
-		if (connectedClients[i] != address)
+		if (connectedClients[i] != addressValue)
 		{
 			continue;
 		}
@@ -77,7 +76,7 @@ int disconnectClient(uint32_t address)
 		int numBytes = (parameters.maxClients - indexSrc) * sizeof(uint32_t);
 		memcpy(connectedClients + indexDst, connectedClients + indexSrc, numBytes);
 		memset(connectedClients + clientIndex, 0, (parameters.maxClients - clientIndex) * sizeof(uint32_t));
-		printf("Disconnected client %d\n", address);
+		printf("Disconnected client %d\n", addressValue);
 		printClients();
 
 		return --clientIndex;
@@ -90,10 +89,26 @@ void disconnectAll()
 {
 	clientIndex = 0;
 	memset(connectedClients, 0, parameters.maxClients * sizeof(uint32_t));
+	printf("Disconnected all clients\n");
+	printClients();
 }
 
 void closeCommunication()
 {
 	free(connectedClients);
 	close(sok);
+}
+
+void printClients()
+{
+	for(int i = 0; i < parameters.maxClients; i++)
+	{
+		printf("%d ", connectedClients[i]);
+	}
+	printf("\n");
+}
+
+void respondToClient(char response, struct sockaddr_in address)
+{
+	sendto(sok, &response, sizeof(response), 0, (struct sockaddr*)&address, sizeof(address));
 }
