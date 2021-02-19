@@ -17,14 +17,16 @@
 #define BUFLEN		sizeof(short)
 #define MAX_CLIENTS 5
 
-#define CMD_CONNECT		0xDCAC
-#define CMD_DISCONNECT	0xACDC
+#define CMD_CONNECT			0xDCAC
+#define CMD_DISCONNECT		0xACDC
+#define CMD_DISCONNECT_ALL	0xAAAA
 
 pid_t launchCamera();
 void disableCamera(pid_t pid);
 
 int connectClient(uint32_t* clients, uint32_t index, uint32_t address);
 int disconnectClient(uint32_t* clients, uint32_t index, uint32_t address);
+void printClients(const uint32_t* clients);
 
 int main (int argc, char** argv)
 {
@@ -88,6 +90,14 @@ int main (int argc, char** argv)
 				}
 				clientIndex = newIndex;
 				break;
+			case CMD_DISCONNECT_ALL:
+				memset(connectedClients, 0, MAX_CLIENTS * sizeof(uint32_t));
+				disableCamera(cameraPid);
+				clientIndex = 0;
+				cameraPid = 0;
+				printf("Disconnected all clients\n");
+				printClients(connectedClients);
+				break;
 		}
 	}
 
@@ -96,14 +106,6 @@ int main (int argc, char** argv)
 	return 0;
 }
 
-void printClients(const uint32_t* clients)
-{
-	for(int i = 0; i < MAX_CLIENTS; i++)
-	{
-		printf("%d ", clients[i]);
-	}
-	printf("\n");
-}
 
 int connectClient(uint32_t* clients, uint32_t index, uint32_t address)
 {
@@ -165,5 +167,15 @@ pid_t launchCamera()
 
 void disableCamera(pid_t pid)
 {
-	kill(pid, SIGKILL);
+	if (pid > 0)
+		kill(pid, SIGKILL);
+}
+
+void printClients(const uint32_t* clients)
+{
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		printf("%d ", clients[i]);
+	}
+	printf("\n");
 }
