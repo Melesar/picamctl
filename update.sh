@@ -2,6 +2,6 @@
 
 git pull origin master
 
-make clear
-make pi
+make clean
+make PI=1
 make install
