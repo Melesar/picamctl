@@ -18,20 +18,20 @@ Then download the source code and build it on the Raspberry PI
 
 git clone https://github.com/Melesar/picamctl
 cd picamctl
-make pi
-sudo make install
+sudo ./update.sh
 
 ```
 
 ## Usage
 
-When the program is running, it listens for UDP packages on port 8085. To connect as a client thus enabling the camera, send the two-bytes value `0xACDC`. This can be achieved, for example, with bash:
+Communication between the server and a client goes via UDP.
+Clients can connect and as long as at least one client is connected, 
+motion will stream the image on port 8081
 
-```bash
-
-printf '\xac\xdc' > /dev/udp/{your-pi-ip-address}/8085
-
-```
-
-To disconnect, send `0xDCAC`. When no clients are connected, the camera will be automatically stopped.
-
+Command | Meaning | Possible answers
+--------|---------|--------
+0xACDC | Connect to the server | 0 - Connection successfull
+-|-|1 - Server is full
+-|-|2 - Already connected
+0xDCAC | Disconnect from the server | -
+0xAAAA | Disconnect all clients | -
