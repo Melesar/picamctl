@@ -4,6 +4,8 @@
 #include <unistd.h>
 #include <signal.h>
 #include <string.h>
+#include <pthread.h>
+
 #include "communication.h"
 
 #ifdef PI
@@ -13,19 +15,16 @@
 #endif
 
 #define PORT		8085
-#define BUFLEN		sizeof(short)
 #define MAX_CLIENTS 5
-
-#define CMD_CONNECT			0xDCAC
-#define CMD_DISCONNECT		0xACDC
-#define CMD_DISCONNECT_ALL	0xAAAA
+#define MAX_PENDING_CONNECTIONS 2
 
 pid_t launchCamera();
+void* acceptRoutine(void*);
 void disableCamera(pid_t pid);
 
 int main (int argc, char** argv)
 {
-	int sok = socket(AF_INET, SOCK_DGRAM, 0);
+	int sok = socket(AF_INET, SOCK_STREAM, 0);
 	if (sok < 0)
 	{
 		printf("Failed to create a socket\n");
@@ -43,8 +42,11 @@ int main (int argc, char** argv)
 		return 1;
 	}
 
-	struct sockaddr_in clientAddress;
-	socklen_t addressLength = sizeof(clientAddress);
+	if (listen(sok, MAX_PENDING_CONNECTIONS) < 0)
+	{
+		printf("Failed to listen on the socket\n");
+		return 1;
+	}
 	
 	communicationParams params;
 	params.maxClients = MAX_CLIENTS;
@@ -53,52 +55,47 @@ int main (int argc, char** argv)
 		printf("Failed to establish communication\n");
 		return -1;
 	}
-	
-	unsigned char buffer[BUFLEN];
-	memset(buffer, 0, BUFLEN);
+
+	pthread_t threadId;
+	pthread_create(&threadId, NULL, &acceptRoutine, (void*)&sok);
 
 	pid_t cameraPid = 0;
-	while (1)
+	while(1)
 	{
-		int receivedBytes = recvfrom(sok, buffer, BUFLEN, 0, (struct sockaddr*)&clientAddress, &addressLength);
-		if (receivedBytes < 0)
+		int numClients = readClients();
+		if (numClients > 0 && cameraPid == 0)
 		{
-			printf("Failed to call receive on socket\n");
-			return 1;
+			cameraPid = launchCamera();
 		}
-
-		unsigned short receivedValue = *((unsigned short*)buffer);
-		printf("Received %d\n", receivedValue);
-
-		int clientsNum;
-		switch (receivedValue)
+		else if (numClients == 0 && cameraPid != 0)
 		{
-			case CMD_CONNECT:;
-				clientsNum = connectClient(clientAddress);
-				if (clientsNum > 0 && cameraPid == 0)
-				{
-					cameraPid = launchCamera();
-				}
-				break;
-			case CMD_DISCONNECT:;
-				clientsNum = disconnectClient(clientAddress);
-				if (clientsNum == 0 && cameraPid != 0)
-				{
-					disableCamera(cameraPid);
-					cameraPid = 0;
-				}
-				break;
-			case CMD_DISCONNECT_ALL:
-				disconnectAll();
-				disableCamera(cameraPid);
-				cameraPid = 0;
-				break;
+			disableCamera(cameraPid);
+			cameraPid = 0;
 		}
 	}
 
 	closeCommunication();
 	close(sok);
 	return 0;
+}
+
+void* acceptRoutine(void* arg)
+{
+	int serverSocket = *(int*)arg;
+	struct sockaddr_in clientAddress;
+	socklen_t addressLength = sizeof(clientAddress);
+	while(1)
+	{
+		int clientSocket = accept(serverSocket, (struct sockaddr*)&clientAddress, &addressLength);
+		if (clientSocket < 0)
+		{
+			printf("Failed to accept connection\n");
+			continue;
+		}
+		
+		connectClient(clientSocket);
+	}
+	return NULL;
 }
 
 pid_t launchCamera()

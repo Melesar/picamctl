@@ -7,88 +7,86 @@
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <pthread.h>
+
+#define BUFLEN		sizeof(short)
+#define CLIENT_SIZE sizeof(clientDescriptor)
 
 #define RES_SUCCESS			  0
 #define RES_FULL			  1
 #define RES_CONNECTED_ALREADY 2
 
+#define CMD_CONNECT			0xDCAC
+#define CMD_DISCONNECT		0xACDC
+#define CMD_DISCONNECT_ALL	0xAAAA
+
+typedef struct clientDescriptor
+{
+	pthread_t threadId;
+	int socket;
+} clientDescriptor;
+
 static communicationParams parameters;
 
-static int sok;
-static uint32_t* connectedClients;
+static clientDescriptor* connectedClients;
 static int clientIndex;
 
 static void printClients();
-static void respondToClient(char response, struct sockaddr_in address);
+static void respondToClient(char response, int socket);
+static void* clientRoutine(void*);
 
 int initCommunication(communicationParams params)
 {
 	parameters = params;
 
-	int memorySize = parameters.maxClients * sizeof(uint32_t);
+	int memorySize = parameters.maxClients * CLIENT_SIZE;
 	connectedClients = malloc(memorySize);
 	memset(connectedClients, 0, memorySize);
 
 	clientIndex = 0;
 
-	sok = socket(AF_INET, SOCK_DGRAM, 0);
-	return sok != -1 ? 0 : -1;
+	return 0;
 }
 
-int connectClient(struct sockaddr_in address)
+int connectClient(int clientSocket)
 {
+	//TODO add synchronization
 	if (clientIndex >= parameters.maxClients)
 	{
-		respondToClient(RES_FULL, address);
-		return parameters.maxClients;
+		respondToClient(RES_FULL, clientSocket);
+		close(clientSocket);
+		return clientIndex;
 	}
 
-	uint32_t addressValue = address.sin_addr.s_addr;
-	for(int i = 0; i < parameters.maxClients; ++i)
+	for (size_t i = 0; i < clientIndex; ++i)
 	{
-		if (connectedClients[i] == addressValue)
+		//Dunno if it actually can happen, but let's check
+		if (connectedClients[i].socket == clientSocket)
 		{
-			respondToClient(RES_CONNECTED_ALREADY, address);
+			respondToClient(RES_CONNECTED_ALREADY, clientSocket);
 			return clientIndex;
 		}
 	}
 
-	connectedClients[clientIndex++] = addressValue;
-	respondToClient(RES_SUCCESS, address);
-	printf("Connected client %d\n", addressValue);
-	printClients();
-
+	clientDescriptor* client = &connectedClients[clientIndex++];
+	client->socket = clientSocket;
+	respondToClient(RES_SUCCESS, clientSocket);
+	pthread_create(&client->threadId, NULL, &clientRoutine, (void*)&client->socket);
 	return clientIndex;
 }
 
-int disconnectClient(struct sockaddr_in address)
+int readClients()
 {
-	uint32_t addressValue = address.sin_addr.s_addr;
-	for(int i = 0; i < parameters.maxClients; i++)
-	{
-		if (connectedClients[i] != addressValue)
-		{
-			continue;
-		}
-
-		int indexSrc = i + 1;
-		int indexDst = i;
-		int numBytes = (parameters.maxClients - indexSrc) * sizeof(uint32_t);
-		memcpy(connectedClients + indexDst, connectedClients + indexSrc, numBytes);
-		memset(connectedClients + clientIndex, 0, (parameters.maxClients - clientIndex) * sizeof(uint32_t));
-		printf("Disconnected client %d\n", addressValue);
-		printClients();
-
-		return --clientIndex;
-	}
-
+	//TODO add synchronization
 	return clientIndex;
 }
 
 void disconnectAll()
 {
+	//TODO add synchronization
+	//TODO close all sockets and terminate all threads
 	clientIndex = 0;
-	memset(connectedClients, 0, parameters.maxClients * sizeof(uint32_t));
+	memset(connectedClients, 0, parameters.maxClients * CLIENT_SIZE);
 	printf("Disconnected all clients\n");
 	printClients();
 }
@@ -96,19 +94,44 @@ void disconnectAll()
 void closeCommunication()
 {
 	free(connectedClients);
-	close(sok);
+}
+
+void* clientRoutine(void* arg)
+{
+	int clientSocket = *(int*)arg;
+	short buffer;
+	while(1)
+	{
+		int receivedBytes = recv(clientSocket, &buffer, sizeof(buffer), 0);
+		if (receivedBytes < sizeof(buffer)) 
+		{
+			continue;
+		}
+
+		switch(buffer)
+		{
+			//TODO figure out how to handle this
+			case CMD_DISCONNECT:;
+				break;
+			case CMD_DISCONNECT_ALL:;
+				disconnectAll();
+				break;
+
+		}
+	}
+	return NULL;
 }
 
 void printClients()
 {
 	for(int i = 0; i < parameters.maxClients; i++)
 	{
-		printf("%d ", connectedClients[i]);
+		printf("%d ", connectedClients[i].socket);
 	}
 	printf("\n");
 }
 
-void respondToClient(char response, struct sockaddr_in address)
+void respondToClient(char response, int socket)
 {
-	sendto(sok, &response, sizeof(response), 0, (struct sockaddr*)&address, sizeof(address));
+	//TODO implement
 }

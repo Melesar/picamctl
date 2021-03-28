@@ -15,12 +15,10 @@ typedef struct
 int initCommunication(communicationParams params);
 
 //Returns the number of currently connected clients
-int connectClient(struct sockaddr_in address); 
+int connectClient(int clientSocket); 
 
 //Returns the number of currently connected clients
-int disconnectClient(struct sockaddr_in address);
-
-void disconnectAll();
+int readClients();
 
 void closeCommunication();
 
