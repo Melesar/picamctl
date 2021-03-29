@@ -28,12 +28,15 @@ typedef struct clientDescriptor
 
 static communicationParams parameters;
 
+static pthread_mutex_t mutex;
 static clientDescriptor* connectedClients;
 static int clientIndex;
 
 static void printClients();
 static void respondToClient(char response, int socket);
 static void* clientRoutine(void*);
+static void disconnectClient(int clientSocket);
+static void disposeClient(const clientDescriptor* client);
 
 int initCommunication(communicationParams params)
 {
@@ -45,12 +48,13 @@ int initCommunication(communicationParams params)
 
 	clientIndex = 0;
 
-	return 0;
+	return pthread_mutex_init(&mutex, NULL);
 }
 
 int connectClient(int clientSocket)
 {
-	//TODO add synchronization
+	pthread_mutex_lock(&mutex);
+
 	if (clientIndex >= parameters.maxClients)
 	{
 		respondToClient(RES_FULL, clientSocket);
@@ -72,54 +76,72 @@ int connectClient(int clientSocket)
 	client->socket = clientSocket;
 	respondToClient(RES_SUCCESS, clientSocket);
 	pthread_create(&client->threadId, NULL, &clientRoutine, (void*)&client->socket);
-	return clientIndex;
+
+	int savedIndex = clientIndex;
+	pthread_mutex_unlock(&mutex);
+
+	return savedIndex;
 }
 
 int readClients()
 {
-	//TODO add synchronization
-	return clientIndex;
+	pthread_mutex_lock(&mutex);
+	int index = clientIndex;
+	pthread_mutex_unlock(&mutex);
+	return index;
 }
 
 void disconnectAll()
 {
-	//TODO add synchronization
-	//TODO close all sockets and terminate all threads
+	pthread_mutex_lock(&mutex);
+	for(size_t i = 0; i < clientIndex; ++i)
+	{
+		disposeClient(&connectedClients[i]);
+	}
 	clientIndex = 0;
 	memset(connectedClients, 0, parameters.maxClients * CLIENT_SIZE);
 	printf("Disconnected all clients\n");
 	printClients();
+	pthread_mutex_unlock(&mutex);
 }
 
 void closeCommunication()
 {
+	disconnectAll();
 	free(connectedClients);
 }
 
 void* clientRoutine(void* arg)
 {
 	int clientSocket = *(int*)arg;
-	short buffer;
+	unsigned short buffer;
 	while(1)
 	{
 		int receivedBytes = recv(clientSocket, &buffer, sizeof(buffer), 0);
+		if (receivedBytes < 0)
+		{
+			printf("Failed to read data from the client\n");
+			return 0;
+		}
+
+		if (receivedBytes == 0)
+		{
+			disconnectClient(clientSocket);
+			return 0;
+		}
+
 		if (receivedBytes < sizeof(buffer)) 
 		{
 			continue;
 		}
 
-		switch(buffer)
+		if (buffer == CMD_DISCONNECT_ALL)
 		{
-			//TODO figure out how to handle this
-			case CMD_DISCONNECT:;
-				break;
-			case CMD_DISCONNECT_ALL:;
-				disconnectAll();
-				break;
-
+			disconnectAll();
+			return 0;
 		}
 	}
-	return NULL;
+	return 0;
 }
 
 void printClients()
@@ -133,5 +155,40 @@ void printClients()
 
 void respondToClient(char response, int socket)
 {
-	//TODO implement
+	send(socket, &response, sizeof(response), 0);
+}
+
+void disconnectClient(int clientSocket)
+{
+	pthread_mutex_lock(&mutex);
+	int removedClientIndex = -1;
+	for (size_t i = 0; i < clientIndex; ++i)
+	{
+		if (connectedClients[i].socket == clientSocket)
+		{
+			disposeClient(&connectedClients[i]);
+			removedClientIndex = i;
+			break;
+		}
+	}
+
+	if (removedClientIndex < 0)
+	{
+		pthread_mutex_unlock(&mutex);
+		return;
+	}
+
+	connectedClients[removedClientIndex] = connectedClients[clientIndex - 1];
+	memset(connectedClients + clientIndex, 0, CLIENT_SIZE);
+	clientIndex -= 1;
+	printClients();
+	
+	pthread_mutex_unlock(&mutex);
+}
+
+void disposeClient(const clientDescriptor* client)
+{
+	close(client->socket);
+	pthread_cancel(client->threadId);
+	pthread_join(client->threadId, NULL);
 }
